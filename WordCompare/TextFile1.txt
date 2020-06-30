@@ -1,0 +1,68 @@
+﻿/*
+        static void Mess()
+        {
+            foreach (string a in sourceData)
+            {
+                /*
+                It is natural to compare length of words in sourceData and searchData before
+                comparing each letter for efficiency, unfortunately this will not be practical
+                for the end use case for Looking Glass as the whole point is not be over
+                zealous with removing data which will be useful for more complex analysis than 
+                comparing single words one charecer at a time.
+                */
+                
+                //Encode the word to an array of ASCII values for each character in the word
+                byte[] sourceAscii = ASCIIEncoding.ASCII.GetBytes(a);
+
+                foreach(byte c in sourceAscii)
+                {
+                    //Encode each byte to SEALNet.Plaintext.
+                    using Plaintext sourceAsciiEncoded = encoder.Encode(c);
+
+                    //Cycle through search data one word at a time.
+                    foreach(string x in searchData)
+                    {
+
+                        //Encode the word to an array of ASCII values for each character in the word.
+                        byte[] searchAscii = ASCIIEncoding.ASCII.GetBytes(x);
+
+                        foreach (byte y in searchAscii)
+                        {
+                            
+                            //Encode each byte to SEALNet.Plaintext.
+                            using Plaintext searchAsciiEncoded = encoder.Encode(y);
+
+                            //Encrypt each plaintext value                      
+                            encryptor.Encrypt(sourceAsciiEncoded, sourceAsciiEncrypted);
+                            encryptor.Encrypt(searchAsciiEncoded, searchAsciiEncrypted);
+
+                            /*
+                            Visualize the encrypted data has been sent out on the DCP network
+                            and the evaluator operatiions are completed on the network.
+                            */
+                            evaluator.Negate(sourceAsciiEncrypted, encryptedResult);
+                            evaluator.AddInplace(encryptedResult, searchAsciiEncrypted);
+
+                            /*
+                            Visualize the encrypted result has been returned to be decrypted
+                            by the data owner.
+                            */
+                            decryptor.Decrypt(encryptedResult, plainResult);
+                            compareResult = encoder.DecodeInt32(plainResult);
+
+                            /*
+                            If compareResult == 0 then we know the letters matched and there
+                            no longer any reason to keep interating through
+                            */
+                            if (compareResult == 0 && ) break;
+                        }
+
+                        if (compareResult == 0) break;
+                    }
+
+                    if (compareResult == 0) break;
+                }
+            }
+        }
+    }
+}
