@@ -6,6 +6,14 @@ namespace WordCompare
 {
     class Program
     {
+
+        static void Main()
+        {
+
+            //OrigionalExample();
+            MikeSCode.BatchEncoderExample();
+        }
+
         /*
         This program is meant as a demonstration of using the Integer Encoder with BFV scheme.
         It is not meant to take all cybersecurity precautions into consideration or meant
@@ -15,8 +23,7 @@ namespace WordCompare
         string -> char -> -> Unicode Number -> encode -> encrypted -> evaluate -> decrypt ->
         decode -> Unicode Number -> char -> string.
         */
-
-        static void Main()
+        public static void OrigionalExample()
         {
             //Load source data to be searched.
             string[] sourceData = File.ReadAllLines("words_alpha.txt");
@@ -53,9 +60,9 @@ namespace WordCompare
             using Ciphertext charEncrypted = new Ciphertext();
             using Ciphertext encryptedResult = new Ciphertext();
             using Plaintext plainResult = new Plaintext();
-            MemoryStream encryptedStream = new MemoryStream(); 
+            MemoryStream encryptedStream = new MemoryStream();
 
-            
+
             Console.WriteLine("Initializing arrays.");
 
             /*
@@ -117,9 +124,9 @@ namespace WordCompare
                     encryptor.Encrypt(charPlaintext, charEncrypted);
 
                     charEncrypted.Save(encryptedStream, ComprModeType.Deflate);
-                    
+
                     sourceEncryptedArray[i][j] = encryptedStream.ToArray();
-                                                            
+
                 }
 
             }
@@ -136,23 +143,23 @@ namespace WordCompare
                 {
                     //Restore byte[] to MemoryStream.
                     MemoryStream sourceEncryptedStream = new MemoryStream(sourceEncryptedArray[i][j]);
-                    MemoryStream searchEncryptedStream = new MemoryStream(searchEncryptedArray[i][j]);
+                    //MemoryStream searchEncryptedStream = new MemoryStream(searchEncryptedArray[i][j]);
 
                     //Load MemoryStream to Ciphertext
                     sourceDataEncrypted.Load(context, sourceEncryptedStream);
-                    searchDataEncrypted.Load(context, searchEncryptedStream);
+                    //searchDataEncrypted.Load(context, searchEncryptedStream);
 
                     //Print to console to validate values, for testing only.
                     decryptor.Decrypt(sourceDataEncrypted, plainResult);
                     resultTest = encoder.DecodeInt64(plainResult);
                     Console.WriteLine("Decrypted sourceDataEncrypted = " + resultTest);
-                    decryptor.Decrypt(searchDataEncrypted, plainResult);
-                    resultTest = encoder.DecodeInt64(plainResult);
-                    Console.WriteLine("Decrypted searchDataEncrypted = " + resultTest);
+                    //decryptor.Decrypt(searchDataEncrypted, plainResult);
+                    //resultTest = encoder.DecodeInt64(plainResult);
+                    //Console.WriteLine("Decrypted searchDataEncrypted = " + resultTest);
 
-                    evaluator.Negate(sourceDataEncrypted, encryptedResult);
+                    //evaluator.Negate(sourceDataEncrypted, encryptedResult);
                     //This is where all goes wrong..... and I can't figure out why.
-                    evaluator.AddInplace(encryptedResult, searchDataEncrypted);
+                    //evaluator.AddInplace(encryptedResult, searchDataEncrypted);
 
                     encryptedResult.Save(encryptedStream, ComprModeType.Deflate);
 
@@ -161,16 +168,14 @@ namespace WordCompare
 
             }
 
-            for (int i =0; i < resultArray.Length; i++)
+            for (int i = 0; i < resultArray.Length; i++)
             {
                 decryptor.Decrypt(encryptedResult, plainResult);
                 compareResult = encoder.DecodeInt32(plainResult);
                 Console.WriteLine(compareResult);
             }
-
         }
 
     }
 
 }
-                    
