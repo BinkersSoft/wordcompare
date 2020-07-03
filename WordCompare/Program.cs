@@ -22,8 +22,8 @@ namespace WordCompare
             string[] sourceData = File.ReadAllLines("words_alpha.txt");
             Console.WriteLine("Loaded source data.");
 
-            //Load data to used in search.
-            string[] searchData = File.ReadAllLines("search.txt");
+            //Load data to used in search. This current example works with searching one word
+            string[] searchData = File.ReadAllLines("searchOneWord.txt");
             Console.WriteLine("Loaded search data.");
 
             /*
@@ -46,6 +46,7 @@ namespace WordCompare
 
             //Declare encrypted variables that cannot be recycled.
             int sourceWordCount = 15;
+            int wordLength = 15; //Currently, all words must be below a certain length
             int compareResult = 1;
             long resultTest = 1;
             using Ciphertext sourceDataEncrypted = new Ciphertext();
@@ -53,9 +54,9 @@ namespace WordCompare
             using Ciphertext charEncrypted = new Ciphertext();
             using Ciphertext encryptedResult = new Ciphertext();
             using Plaintext plainResult = new Plaintext();
-            MemoryStream encryptedStream = new MemoryStream(); 
+            MemoryStream encryptedStream = new MemoryStream();
 
-            
+
             Console.WriteLine("Initializing arrays.");
 
             /*
@@ -65,44 +66,52 @@ namespace WordCompare
             byte[][][] sourceEncryptedArray = new byte[15][][];
             for (int i = 0; i < sourceWordCount; i++)
             {
-                byte[][] sourceCharacterArray = new byte[15][];
+                byte[][] sourceCharacterArray = new byte[wordLength][];
                 for (int j = 0; j < sourceWordCount; j++)
                 {
-                    using Plaintext arrayInitPlaintext = encoder.Encode(j);
+                    using Plaintext arrayInitPlaintext = encoder.Encode(0); //Filling the data with 0's
                     using Ciphertext arrayInitEncrypted = new Ciphertext();
                     encryptor.Encrypt(arrayInitPlaintext, arrayInitEncrypted);
                     arrayInitEncrypted.Save(encryptedStream, ComprModeType.Deflate);
-                    sourceCharacterArray[j] = encryptedStream.ToArray();
+
+                    sourceCharacterArray[j] = encryptedStream.ToArray(); //Save the data as bytes.
+
+                    encryptedStream.Seek(0, SeekOrigin.Begin); //Move the pointer back to the beginning of the stream
 
                 }
 
                 sourceEncryptedArray[i] = sourceCharacterArray;
             }
 
+            encryptedStream.Seek(0, SeekOrigin.Begin);
+
             byte[][][] searchEncryptedArray = new byte[searchData.Length][][];
             for (int i = 0; i < searchData.Length; i++)
             {
-                byte[][] searchCharacterArray = new byte[searchData.Length][];
-                for (int j = 0; j < searchData.Length; j++)
+                byte[][] searchCharacterArray = new byte[wordLength][];
+                for (int j = 0; j < sourceWordCount; j++)
                 {
-                    using Plaintext arrayInitPlaintext = encoder.Encode(j);
+                    using Plaintext arrayInitPlaintext = encoder.Encode(0); //Filling the data with 0's
                     using Ciphertext arrayInitEncrypted = new Ciphertext();
                     encryptor.Encrypt(arrayInitPlaintext, arrayInitEncrypted);
                     arrayInitEncrypted.Save(encryptedStream, ComprModeType.Deflate);
-                    searchCharacterArray[j] = encryptedStream.ToArray();
 
+                    searchCharacterArray[j] = encryptedStream.ToArray(); //Save the data as bytes.
+
+                    encryptedStream.Seek(0, SeekOrigin.Begin); //Move the pointer back to the beginning of the stream
                 }
-
                 searchEncryptedArray[i] = searchCharacterArray;
             }
+
+            encryptedStream.Seek(0, SeekOrigin.Begin);
 
             //Cycle through all strings in sourceData, up to sourceWordCount.
             for (int i = 0; i < sourceWordCount; i++)
             {
-
                 //Create char array for all char in source.Data[i].
                 char[] charArray = sourceData[i].ToCharArray();
 
+                Console.Write("Source Words being encrypted: ");
                 //Cycle through each character.
                 for (int j = 0; j < charArray.Length; j++)
                 {
@@ -117,60 +126,115 @@ namespace WordCompare
                     encryptor.Encrypt(charPlaintext, charEncrypted);
 
                     charEncrypted.Save(encryptedStream, ComprModeType.Deflate);
-                    
+
+                    //Print to console to validate values, for testing only.
+                    using Plaintext plainData = new Plaintext();
+                    decryptor.Decrypt(charEncrypted, plainData);
+                    long dataVal = encoder.DecodeInt64(plainData);
+                    Console.Write(dataVal + " ");
+
                     sourceEncryptedArray[i][j] = encryptedStream.ToArray();
-                                                            
+                    encryptedStream.Seek(0, SeekOrigin.Begin); //Move the pointer back to the beginning of the stream
+
                 }
 
+                Console.WriteLine();
+
             }
+            Console.WriteLine();
+            encryptedStream.Seek(0, SeekOrigin.Begin);
+
+            for (int i = 0; i < searchData.Length; i++)
+            {
+                char[] charArray = searchData[i].ToCharArray();
+                Console.Write("Search Word being encrypted: ");
+
+                for (int j = 0; j < charArray.Length; j++)
+                {
+                    //Convert charArrayTemp[c] to Int64.
+                    long charInt64 = Convert.ToInt64(charArray[j]);
+
+                    //Encode integer into plaintext elements.
+                    using Plaintext charPlaintext = encoder.Encode(charInt64);
+
+                    //Encrypt the plaintext.
+                    encryptor.Encrypt(charPlaintext, charEncrypted);
+
+                    charEncrypted.Save(encryptedStream, ComprModeType.Deflate);
+
+                    //Print to console to validate values, for testing only.
+                    using Plaintext plainData = new Plaintext();
+                    decryptor.Decrypt(charEncrypted, plainData);
+                    long dataVal;
+                    dataVal = encoder.DecodeInt64(plainData);
+                    Console.Write(dataVal + " ");
+
+                    searchEncryptedArray[i][j] = encryptedStream.ToArray();
+                    encryptedStream.Seek(0, SeekOrigin.Begin); //Move the pointer back to the beginning of the stream
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine();
+            encryptedStream.Seek(0, SeekOrigin.Begin);
 
             //Send data out to be analyzed
 
-            //Initialize resultArray[][], may need to epand to resultArray[][][].
-            byte[][] resultArray = new byte[sourceEncryptedArray.Length][];
+            byte[][][] resultArray = new byte[sourceEncryptedArray.Length][][];
 
             for (int i = 0; i < sourceEncryptedArray.Length; i++)
             {
-
+                byte[][] resultWordArray = new byte[15][];
+                Console.Write("Word being decrypted: ");
                 for (int j = 0; j < sourceEncryptedArray[i].Length; j++)
                 {
-                    //Restore byte[] to MemoryStream.
                     MemoryStream sourceEncryptedStream = new MemoryStream(sourceEncryptedArray[i][j]);
-                    MemoryStream searchEncryptedStream = new MemoryStream(searchEncryptedArray[i][j]);
+                    MemoryStream searchEncryptedStream = new MemoryStream(searchEncryptedArray[0][j]); //We are using 0 instead of i because we are only looping through one word.
 
-                    //Load MemoryStream to Ciphertext
                     sourceDataEncrypted.Load(context, sourceEncryptedStream);
                     searchDataEncrypted.Load(context, searchEncryptedStream);
 
                     //Print to console to validate values, for testing only.
                     decryptor.Decrypt(sourceDataEncrypted, plainResult);
                     resultTest = encoder.DecodeInt64(plainResult);
-                    Console.WriteLine("Decrypted sourceDataEncrypted = " + resultTest);
-                    decryptor.Decrypt(searchDataEncrypted, plainResult);
-                    resultTest = encoder.DecodeInt64(plainResult);
-                    Console.WriteLine("Decrypted searchDataEncrypted = " + resultTest);
+                    Console.Write(resultTest + " ");
 
                     evaluator.Negate(sourceDataEncrypted, encryptedResult);
-                    //This is where all goes wrong..... and I can't figure out why.
                     evaluator.AddInplace(encryptedResult, searchDataEncrypted);
 
                     encryptedResult.Save(encryptedStream, ComprModeType.Deflate);
+                    resultWordArray[j] = encryptedStream.ToArray();
 
-                    resultArray[i] = encryptedStream.ToArray();
+                    encryptedStream.Seek(0, SeekOrigin.Begin);
+
                 }
+                resultArray[i] = resultWordArray;
+
+                Console.WriteLine();
 
             }
 
-            for (int i =0; i < resultArray.Length; i++)
+            Console.WriteLine();
+
+            //This 2D loop looks at our resultArray array, read the bytes into a MemoryStream to be decrypted and decoded, then print the values of each character.
+            for (int i = 0; i < resultArray.Length; i++)
             {
-                decryptor.Decrypt(encryptedResult, plainResult);
-                compareResult = encoder.DecodeInt32(plainResult);
-                Console.WriteLine(compareResult);
-            }
+                Console.Write("Word Results: ");
+                for (int j = 0; j < resultArray[i].Length; j++)
+                {
+                    MemoryStream resultsEncryptedStream = new MemoryStream(resultArray[i][j]);
+                    using Ciphertext results = new Ciphertext();
+                    results.Load(context, resultsEncryptedStream);
 
+
+                    decryptor.Decrypt(results, plainResult);
+                    compareResult = encoder.DecodeInt32(plainResult);
+                    Console.Write(compareResult + " ");
+                }
+                Console.WriteLine();
+            }
         }
 
     }
 
 }
-                    
