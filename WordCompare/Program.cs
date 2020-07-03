@@ -45,7 +45,7 @@ namespace WordCompare
             using IntegerEncoder encoder = new IntegerEncoder(context);
 
             //Declare encrypted variables that cannot be recycled.
-            int sourceWordCount = 15;
+            int sourceWordCount = 15; //The number of words to load from words_alpha.txt
             int wordLength = 15; //Currently, all words must be below a certain length
             int compareResult = 1;
             long resultTest = 1;
@@ -67,7 +67,7 @@ namespace WordCompare
             for (int i = 0; i < sourceWordCount; i++)
             {
                 byte[][] sourceCharacterArray = new byte[wordLength][];
-                for (int j = 0; j < sourceWordCount; j++)
+                for (int j = 0; j < wordLength; j++)
                 {
                     using Plaintext arrayInitPlaintext = encoder.Encode(0); //Filling the data with 0's
                     using Ciphertext arrayInitEncrypted = new Ciphertext();
@@ -89,7 +89,7 @@ namespace WordCompare
             for (int i = 0; i < searchData.Length; i++)
             {
                 byte[][] searchCharacterArray = new byte[wordLength][];
-                for (int j = 0; j < sourceWordCount; j++)
+                for (int j = 0; j < wordLength; j++)
                 {
                     using Plaintext arrayInitPlaintext = encoder.Encode(0); //Filling the data with 0's
                     using Ciphertext arrayInitEncrypted = new Ciphertext();
@@ -115,7 +115,6 @@ namespace WordCompare
                 //Cycle through each character.
                 for (int j = 0; j < charArray.Length; j++)
                 {
-
                     //Convert charArrayTemp[c] to Int64.
                     long charInt64 = Convert.ToInt64(charArray[j]);
 
@@ -135,11 +134,8 @@ namespace WordCompare
 
                     sourceEncryptedArray[i][j] = encryptedStream.ToArray();
                     encryptedStream.Seek(0, SeekOrigin.Begin); //Move the pointer back to the beginning of the stream
-
                 }
-
                 Console.WriteLine();
-
             }
             Console.WriteLine();
             encryptedStream.Seek(0, SeekOrigin.Begin);
