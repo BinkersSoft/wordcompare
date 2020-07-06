@@ -4,16 +4,8 @@ using Microsoft.Research.SEAL;
 
 namespace WordCompare
 {
-    class Program
+    class Program1
     {
-
-        static void Main()
-        {
-
-            //OrigionalExample();
-            MikeSCode.BatchEncoderExample();
-        }
-
         /*
         This program is meant as a demonstration of using the Integer Encoder with BFV scheme.
         It is not meant to take all cybersecurity precautions into consideration or meant
