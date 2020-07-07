@@ -567,7 +567,7 @@ namespace WordCompare
             Console.WriteLine("Input Matrix and Search Value Evaluated");
 
             //Decrypt
-            using Plaintext plainResultMatrix = new Plaintext((ulong)inputASCIIMatrix.Count, 0);
+            using Plaintext plainResultMatrix = new Plaintext(context);
             decryptor.Decrypt(encryptedInputMatrix, plainResultMatrix);
 
             Console.WriteLine("Result Matrix Decrypted");
