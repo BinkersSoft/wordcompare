@@ -3,6 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.Research.SEAL;
+using Konscious.Security.Cryptography;
+using System.Text;
+using System.Buffers.Binary;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace WordCompare
 {
@@ -21,6 +26,7 @@ namespace WordCompare
         {
             //MikeSExample();
             //BrennanBExample();
+            BrennanBExampleWithHashing();
         }
 
         public static void MikeSExample()
@@ -438,6 +444,149 @@ namespace WordCompare
             batchEncoder.Decode(plainResultMatrix, resultData);
 
             Console.WriteLine("Result Decoded");
+        }
+    
+        public static void BrennanBExampleWithHashing()
+        {
+            string[] inputData = File.ReadAllLines("words_alpha.txt");
+            Console.WriteLine("Loaded source data.");
+
+            //Load data to used in search.
+            string[] searchData = File.ReadAllLines("search.txt");
+            Console.WriteLine("Loaded search data.");
+
+            using EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
+            ulong polyModulusDegree = 4096;
+            parms.PolyModulusDegree = polyModulusDegree;
+            parms.CoeffModulus = CoeffModulus.BFVDefault(polyModulusDegree);
+            //Used to enable batching
+            parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 20);
+            using SEALContext context = new SEALContext(parms);
+            using KeyGenerator keygen = new KeyGenerator(context);
+            using PublicKey publicKey = keygen.PublicKey;
+            using SecretKey secretKey = keygen.SecretKey;
+            using Encryptor encryptor = new Encryptor(context, publicKey);
+            using Evaluator evaluator = new Evaluator(context);
+            using Decryptor decryptor = new Decryptor(context, secretKey);
+            using BatchEncoder batchEncoder = new BatchEncoder(context);
+            using IntegerEncoder integerEncoder = new IntegerEncoder(context);
+
+            //Declare encrypted variables that cannot be recycled.;
+            using Ciphertext sourceDataEncrypted = new Ciphertext();
+            using Ciphertext searchDataEncrypted = new Ciphertext();
+            using Ciphertext charEncrypted = new Ciphertext();
+            using Ciphertext encryptedResult = new Ciphertext();
+            using Plaintext plainResult = new Plaintext();
+            MemoryStream encryptedStream = new MemoryStream();
+            ulong inputFillCharValue = 32;
+
+
+            List<string> inputHexData = new List<string>();
+            string searchHexValue = "";
+            byte[] salt = BitConverter.GetBytes(12345678); //Updated version - https://stackoverflow.com/questions/4176653/int-to-byte-array
+            var argon2 = new Argon2d(Encoding.ASCII.GetBytes(searchData[0]));
+
+            argon2.DegreeOfParallelism = 2;
+            argon2.MemorySize = 32;
+            argon2.Iterations = 2;
+            argon2.Salt = salt;
+
+            //****Normally would just go immediately to Dec(ulong) but want to see how the Hex will work out****
+            searchHexValue = BitConverter.ToString(argon2.GetBytes(8)).Replace("-", string.Empty);
+
+            //Loops through polyModulusDegree number of times (4096 in this case), hashes the word, then adds it to the list
+            for (int i = 0; i < (int)parms.PolyModulusDegree; i++)
+            {
+                argon2 = new Argon2d(Encoding.ASCII.GetBytes(inputData[i]));
+                argon2.DegreeOfParallelism = 2;
+                argon2.MemorySize = 32;
+                argon2.Iterations = 2;
+                argon2.Salt = salt;
+
+                inputHexData.Add(BitConverter.ToString(argon2.GetBytes(8)).Replace("-", string.Empty));
+            }
+
+            argon2.Dispose();
+            //Create the searchValue
+            ulong searchASCIIValue = Convert.ToUInt64(searchHexValue, 16);
+            //Create a matrix filled with the search value
+            List<ulong> searchASCIIMatrix = Enumerable.Repeat<ulong>(searchASCIIValue, (int)parms.PolyModulusDegree).ToList();
+
+            //Create a matrix from the input values
+            List<ulong> inputASCIIMatrix = new List<ulong>((int)parms.PolyModulusDegree);
+
+            foreach (var hex in inputHexData)
+            {
+                inputASCIIMatrix.Add(Convert.ToUInt64(hex, 16));
+            }
+
+            Console.WriteLine("ASCII Matrix and Search Value Created");
+
+            //Set the size of the plaintext equal to the size of the matrix
+            using Plaintext plainInputMatrix = new Plaintext((ulong)inputASCIIMatrix.Count, 0);
+            batchEncoder.Encode(inputASCIIMatrix, plainInputMatrix);
+
+            using Plaintext plainSearchMatrix = new Plaintext((ulong)searchASCIIMatrix.Count, 0);
+            batchEncoder.Encode(searchASCIIMatrix, plainSearchMatrix);
+
+            //Using a single value
+            //using Plaintext plainSearchValue = new Plaintext();
+            //integerEncoder.Encode(searchASCIIValue, plainSearchValue);
+
+            Console.WriteLine("Input Matrix and Search Value Encoded");
+
+            //Encrypt the two plaintext objects
+            using Ciphertext encryptedInputMatrix = new Ciphertext(context);
+            encryptor.Encrypt(plainInputMatrix, encryptedInputMatrix);
+
+            using Ciphertext encryptedSearchMatrix = new Ciphertext(context);
+            encryptor.Encrypt(plainSearchMatrix, encryptedSearchMatrix);
+
+            //Using a single value
+            //using Ciphertext encryptedSearchValue = new Ciphertext(context);
+            //encryptor.Encrypt(plainSearchValue, encryptedSearchValue);
+
+            Console.WriteLine("Input Matrix and Search Value Encrypted");
+
+            //Evaluate
+            /*
+            using Ciphertext encryptedNegativeSearchValue = new Ciphertext();
+            evaluator.Negate(encryptedSearchValue, encryptedNegativeSearchValue);
+
+            using Ciphertext encryptedResultMatrix = new Ciphertext();
+
+            evaluator.Add(encryptedInputMatrix, encryptedNegativeSearchValue, encryptedResultMatrix);
+            */
+
+            //using Ciphertext encryptedNegativeInputMatrix = new Ciphertext();
+            //evaluator.Negate(encryptedInputMatrix, encryptedNegativeInputMatrix);
+            using Ciphertext encryptedResultMatrix = new Ciphertext(context);
+            evaluator.SubInplace(encryptedInputMatrix, encryptedSearchMatrix);//, encryptedResultMatrix);
+
+            
+            Console.WriteLine("Input Matrix and Search Value Evaluated");
+
+            //Decrypt
+            using Plaintext plainResultMatrix = new Plaintext((ulong)inputASCIIMatrix.Count, 0);
+            decryptor.Decrypt(encryptedInputMatrix, plainResultMatrix);
+
+            Console.WriteLine("Result Matrix Decrypted");
+
+            //Decode
+            List<ulong> resultData = new List<ulong>();
+            batchEncoder.Decode(plainResultMatrix, resultData);
+
+            Console.WriteLine("Result Decoded");
+
+            foreach (ulong num in resultData)
+            {
+                if (num == 0)
+                {
+                    Console.WriteLine(num);
+                }
+            }
+
+            Console.WriteLine("Result Analyzed");
         }
     }
 
