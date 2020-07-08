@@ -460,7 +460,9 @@ namespace WordCompare
             parms.PolyModulusDegree = polyModulusDegree;
             parms.CoeffModulus = CoeffModulus.BFVDefault(polyModulusDegree);
             //Used to enable batching
-            parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 20);
+            //33 is because .Batching takes a prime less than 2^x and greater than 2^(x-1) and since we need 32 bits (4 bytes of HEX or 8 HEX values) 
+            //which has 16^8 different values, which is enough to cover the entirety of Unicode
+            parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 33); 
             using SEALContext context = new SEALContext(parms);
             using KeyGenerator keygen = new KeyGenerator(context);
             using PublicKey publicKey = keygen.PublicKey;
@@ -471,20 +473,11 @@ namespace WordCompare
             using BatchEncoder batchEncoder = new BatchEncoder(context);
             using IntegerEncoder integerEncoder = new IntegerEncoder(context);
 
-            //Declare encrypted variables that cannot be recycled.;
-            using Ciphertext sourceDataEncrypted = new Ciphertext();
-            using Ciphertext searchDataEncrypted = new Ciphertext();
-            using Ciphertext charEncrypted = new Ciphertext();
-            using Ciphertext encryptedResult = new Ciphertext();
-            using Plaintext plainResult = new Plaintext();
-            MemoryStream encryptedStream = new MemoryStream();
-            ulong inputFillCharValue = 32;
-
-
+            //The input data in HEX form
             List<string> inputHexData = new List<string>();
             string searchHexValue = "";
             byte[] salt = BitConverter.GetBytes(12345678); //Updated version - https://stackoverflow.com/questions/4176653/int-to-byte-array
-            var argon2 = new Argon2d(Encoding.ASCII.GetBytes(searchData[0]));
+            var argon2 = new Argon2d(Encoding.ASCII.GetBytes(searchData[1]));
 
             argon2.DegreeOfParallelism = 2;
             argon2.MemorySize = 32;
@@ -492,7 +485,7 @@ namespace WordCompare
             argon2.Salt = salt;
 
             //****Normally would just go immediately to Dec(ulong) but want to see how the Hex will work out****
-            searchHexValue = BitConverter.ToString(argon2.GetBytes(8)).Replace("-", string.Empty);
+            searchHexValue = BitConverter.ToString(argon2.GetBytes(4)).Replace("-", string.Empty);
 
             //Loops through polyModulusDegree number of times (4096 in this case), hashes the word, then adds it to the list
             for (int i = 0; i < (int)parms.PolyModulusDegree; i++)
@@ -503,7 +496,7 @@ namespace WordCompare
                 argon2.Iterations = 2;
                 argon2.Salt = salt;
 
-                inputHexData.Add(BitConverter.ToString(argon2.GetBytes(8)).Replace("-", string.Empty));
+                inputHexData.Add(BitConverter.ToString(argon2.GetBytes(4)).Replace("-", string.Empty));
             }
 
             argon2.Dispose();
@@ -511,7 +504,6 @@ namespace WordCompare
             ulong searchASCIIValue = Convert.ToUInt64(searchHexValue, 16);
             //Create a matrix filled with the search value
             List<ulong> searchASCIIMatrix = Enumerable.Repeat<ulong>(searchASCIIValue, (int)parms.PolyModulusDegree).ToList();
-
             //Create a matrix from the input values
             List<ulong> inputASCIIMatrix = new List<ulong>((int)parms.PolyModulusDegree);
 
@@ -529,10 +521,6 @@ namespace WordCompare
             using Plaintext plainSearchMatrix = new Plaintext((ulong)searchASCIIMatrix.Count, 0);
             batchEncoder.Encode(searchASCIIMatrix, plainSearchMatrix);
 
-            //Using a single value
-            //using Plaintext plainSearchValue = new Plaintext();
-            //integerEncoder.Encode(searchASCIIValue, plainSearchValue);
-
             Console.WriteLine("Input Matrix and Search Value Encoded");
 
             //Encrypt the two plaintext objects
@@ -542,33 +530,17 @@ namespace WordCompare
             using Ciphertext encryptedSearchMatrix = new Ciphertext(context);
             encryptor.Encrypt(plainSearchMatrix, encryptedSearchMatrix);
 
-            //Using a single value
-            //using Ciphertext encryptedSearchValue = new Ciphertext(context);
-            //encryptor.Encrypt(plainSearchValue, encryptedSearchValue);
-
             Console.WriteLine("Input Matrix and Search Value Encrypted");
 
             //Evaluate
-            /*
-            using Ciphertext encryptedNegativeSearchValue = new Ciphertext();
-            evaluator.Negate(encryptedSearchValue, encryptedNegativeSearchValue);
-
-            using Ciphertext encryptedResultMatrix = new Ciphertext();
-
-            evaluator.Add(encryptedInputMatrix, encryptedNegativeSearchValue, encryptedResultMatrix);
-            */
-
-            //using Ciphertext encryptedNegativeInputMatrix = new Ciphertext();
-            //evaluator.Negate(encryptedInputMatrix, encryptedNegativeInputMatrix);
             using Ciphertext encryptedResultMatrix = new Ciphertext(context);
-            evaluator.SubInplace(encryptedInputMatrix, encryptedSearchMatrix);//, encryptedResultMatrix);
+            evaluator.Sub(encryptedInputMatrix, encryptedSearchMatrix, encryptedResultMatrix);
 
-            
             Console.WriteLine("Input Matrix and Search Value Evaluated");
 
             //Decrypt
-            using Plaintext plainResultMatrix = new Plaintext(context);
-            decryptor.Decrypt(encryptedInputMatrix, plainResultMatrix);
+            using Plaintext plainResultMatrix = new Plaintext();
+            decryptor.Decrypt(encryptedResultMatrix, plainResultMatrix);
 
             Console.WriteLine("Result Matrix Decrypted");
 
@@ -576,17 +548,13 @@ namespace WordCompare
             List<ulong> resultData = new List<ulong>();
             batchEncoder.Decode(plainResultMatrix, resultData);
 
-            Console.WriteLine("Result Decoded");
+            Console.WriteLine("Result Matrix Decoded");
 
-            foreach (ulong num in resultData)
+            if (resultData.FindIndex(x => x == 0) != -1)
             {
-                if (num == 0)
-                {
-                    Console.WriteLine(num);
-                }
+                Console.WriteLine("Match found");
             }
-
-            Console.WriteLine("Result Analyzed");
+            
         }
     }
 
