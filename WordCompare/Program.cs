@@ -24,9 +24,17 @@ namespace WordCompare
         */
         public static void Main()
         {
+            DCPExample test1 = new DCPExample(4096);
+            string[] inputData = File.ReadAllLines("words_alpha.txt");
+            test1.loadInputData(inputData);
+            test1.hashInputData();
+            test1.readHashedInputData();
+            int numCipher = test1.setupCiphers();
+            Console.WriteLine("Word found: " + test1.search("zwitterionic"));
+
             //MikeSExample();
             //BrennanBExample();
-            BrennanBExampleWithHashing();
+            //BrennanBExampleWithHashing();
         }
 
         public static void MikeSExample()
@@ -240,7 +248,7 @@ namespace WordCompare
 
             }
         }
-    
+
         public static void BrennanBExample()
         {
             //Load source data to be searched.
@@ -445,7 +453,7 @@ namespace WordCompare
 
             Console.WriteLine("Result Decoded");
         }
-    
+
         public static void BrennanBExampleWithHashing()
         {
             string[] inputData = File.ReadAllLines("words_alpha.txt");
@@ -459,10 +467,11 @@ namespace WordCompare
             ulong polyModulusDegree = 4096;
             parms.PolyModulusDegree = polyModulusDegree;
             parms.CoeffModulus = CoeffModulus.BFVDefault(polyModulusDegree);
+
             //Used to enable batching
             //33 is because .Batching takes a prime less than 2^x and greater than 2^(x-1) and since we need 32 bits (4 bytes of HEX or 8 HEX values) 
             //which has 16^8 different values, which is enough to cover the entirety of Unicode
-            parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 33); 
+            parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 33);
             using SEALContext context = new SEALContext(parms);
             using KeyGenerator keygen = new KeyGenerator(context);
             using PublicKey publicKey = keygen.PublicKey;
@@ -506,6 +515,10 @@ namespace WordCompare
             List<ulong> searchASCIIMatrix = Enumerable.Repeat<ulong>(searchASCIIValue, (int)parms.PolyModulusDegree).ToList();
             //Create a matrix from the input values
             List<ulong> inputASCIIMatrix = new List<ulong>((int)parms.PolyModulusDegree);
+
+            //Since tuesday, I have worked with Michael on fixing up the WordCompare BFV Batch encoding with hashing example as well as starting to go through and learn how blazor and razor works.
+            //Today i will probably attempt to make the WordCompare more asynchronous to better replicate what will be happening once we get the DCP working
+            //I dont believe i will have any issues
 
             foreach (var hex in inputHexData)
             {
@@ -554,9 +567,49 @@ namespace WordCompare
             {
                 Console.WriteLine("Match found");
             }
-            
+
         }
+
+        public static void BrennanBDCPExample(string searchValue)
+        {
+            string[] inputData = File.ReadAllLines("words_alpha.txt");
+            Console.WriteLine("Loaded source data.");
+
+            using EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
+            ulong polyModulusDegree = 4096;
+            parms.PolyModulusDegree = polyModulusDegree;
+            parms.CoeffModulus = CoeffModulus.BFVDefault(polyModulusDegree);
+            //Used to enable batching
+            //33 is because .Batching takes a prime less than 2^x and greater than 2^(x-1) and since we need 32 bits (4 bytes of HEX or 8 HEX values) 
+            //which has 16^8 different values, which is enough to cover the entirety of Unicode
+            parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 33);
+            using SEALContext context = new SEALContext(parms);
+            using KeyGenerator keygen = new KeyGenerator(context);
+            using PublicKey publicKey = keygen.PublicKey;
+            using SecretKey secretKey = keygen.SecretKey;
+            using Encryptor encryptor = new Encryptor(context, publicKey);
+            using Evaluator evaluator = new Evaluator(context);
+            using Decryptor decryptor = new Decryptor(context, secretKey);
+            using BatchEncoder batchEncoder = new BatchEncoder(context);
+            using IntegerEncoder integerEncoder = new IntegerEncoder(context);
+
+            List<ulong> hashedInputData = new List<ulong>();
+
+            var argon2 = new Argon2d(Encoding.ASCII.GetBytes(searchValue));
+            byte[] salt = BitConverter.GetBytes(12345678); //Updated version - https://stackoverflow.com/questions/4176653/int-to-byte-array
+
+            //May want to optimize these values
+            argon2.DegreeOfParallelism = 2;
+            argon2.MemorySize = 32;
+            argon2.Iterations = 2;
+            argon2.Salt = salt;
+
+
+
+        }
+
+
+        
+
     }
-
-
 }
