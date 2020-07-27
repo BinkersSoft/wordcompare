@@ -25,12 +25,10 @@ namespace WordCompare
         private PublicKey publicKey { get; set; }
         private SecretKey secretKey { get; set; }
         private Encryptor encryptor { get; set; }
-        private Evaluator evaluator { get; set; }
         private Decryptor decryptor { get; set; }
 
         //Encoders
         private BatchEncoder batchEncoder { get; set; }
-        //private IntegerEncoder integerEncoder { get; set; }
 
         //Argon2
         private Argon2d argon2 { get; set; }
@@ -55,10 +53,8 @@ namespace WordCompare
             publicKey = keygen.PublicKey;
             secretKey = keygen.SecretKey;
             encryptor = new Encryptor(context, publicKey);
-            evaluator = new Evaluator(context);
             decryptor = new Decryptor(context, secretKey);
             batchEncoder = new BatchEncoder(context);
-            //integerEncoder = new IntegerEncoder(context);
 
             //Default value for salt
             salt = BitConverter.GetBytes(12345678);
@@ -75,25 +71,28 @@ namespace WordCompare
         /// <param name="path">Location of the bin file</param>
         public void hashInputData(string path = "HashedInputData.bin")
         {
+            Stopwatch sw = new Stopwatch();
             if (inputData == null || inputData.Length == 0)
             {
                 throw new InvalidOperationException("Ensure input data exists before hashing");
             }
             Console.WriteLine("Hashing Data. This may take a while");
-    
+            sw.Start();
             for (int i = 0; i < inputData.Length; i++) 
             {
                 //Create hash
                 argon2 = new Argon2d(Encoding.ASCII.GetBytes(inputData[i]));
 
-                argon2.DegreeOfParallelism = 2;
-                argon2.MemorySize = 32;
+                argon2.DegreeOfParallelism = 1;
+                argon2.MemorySize = 4;
                 argon2.Iterations = 1;
                 argon2.Salt = salt;
 
                 //Converts from bytes, to hex (removes dashes), to ulongs
                 hashedInputData.Add((ulong)BitConverter.ToUInt32(argon2.GetBytes(4)));
             }
+            sw.Stop();
+            Console.WriteLine("Total time to hash: " + sw.ElapsedMilliseconds);
 
             writeHashedInputData(path);
         }
@@ -126,6 +125,7 @@ namespace WordCompare
             {
                 throw new FileNotFoundException("File does not exist");
             }
+
             FileStream fs = new FileStream(path, FileMode.Open);
             BinaryReader binReader = new BinaryReader(fs);
             int listLength = binReader.ReadInt32();
@@ -143,26 +143,35 @@ namespace WordCompare
         /// <returns>The number of lists created</returns>
         public int setupCiphers()
         {
+            //Set a variable equal to the total size of hashed data
             int arraySize = hashedInputData.Count;
 
+            //Loop through x amount of times where x = (total hashed input count) / (polyModulusDegree) rounded up
             for (int i = 0; i < Math.Ceiling((double)hashedInputData.Count / parms.PolyModulusDegree); i++)
             {
+                //Create a Plaintext to store the range of hashed values
                 using Plaintext plainDataMatrix = new Plaintext((ulong)parms.PolyModulusDegree, 0);
+
+                //Examples of the list if there is 10,000 hashed items with a polyModDegree of 4096. List1 = 0-4095, List2 = 4096-8191, List3 = 8192-10000
                 batchEncoder.Encode(hashedInputData.GetRange(i * (int)parms.PolyModulusDegree, Math.Min((int)parms.PolyModulusDegree, arraySize)), plainDataMatrix);
 
+                //Decrement the number used to calculate the array size
                 arraySize -= (int)parms.PolyModulusDegree;
 
+                //Encrypt the data
                 using Ciphertext encryptedDataMatrix = new Ciphertext(context);
                 encryptor.Encrypt(plainDataMatrix, encryptedDataMatrix);
 
+                //Add it to the data list
                 encryptedDataList.Add(new Ciphertext(encryptedDataMatrix));
             }
 
+            //Return the number of lists (can be used to determine how many jobs to process for the DCP)
             return encryptedDataList.Count;
         }
 
 
-        public bool search(string searchWord)
+        public int search(string searchWord)
         {
             Stopwatch sw = new Stopwatch();
             sw.Start();
@@ -170,39 +179,49 @@ namespace WordCompare
             {
                 throw new InvalidOperationException("The ciphertexts must be created before searching them");
             }
-            //Hash the search word
-            argon2 = new Argon2d(Encoding.ASCII.GetBytes(searchWord));
+
             bool matchFound = false;
 
-            argon2.DegreeOfParallelism = 2;
-            argon2.MemorySize = 32;
+            //Hash the search word
+            argon2 = new Argon2d(Encoding.ASCII.GetBytes(searchWord));
+            
+            argon2.DegreeOfParallelism = 1;
+            argon2.MemorySize = 4;
             argon2.Iterations = 1;
             argon2.Salt = salt;
 
-            //Converts from bytes, to hex (removes dashes), to ulongs
+            //Converts from bytes to ulong
             ulong searchValue = (ulong)BitConverter.ToUInt32(argon2.GetBytes(4));
             argon2.Dispose();
 
+            //Create a list of the search word repeated
             List<ulong> searchValueMatrix = Enumerable.Repeat<ulong>(searchValue, (int)parms.PolyModulusDegree).ToList();
 
+            //Encode it
             using Plaintext plainSearchValueMatrix = new Plaintext();
             batchEncoder.Encode(searchValueMatrix, plainSearchValueMatrix);
 
+            //Encrypt it
             using Ciphertext encryptedSearchValue = new Ciphertext(context);
             encryptor.Encrypt(plainSearchValueMatrix, encryptedSearchValue);
+
+            //Start the search
             Console.Write("Searching");
             int index = 0;
-            while (!matchFound && index < encryptedDataList.Count)
+
+            int totalWordCount = 0;
+
+            //Search for single and stop
+            //while (!matchFound && index < encryptedDataList.Count)
+            while (index < encryptedDataList.Count)
             {
+                //Writing out the . gives a sense of progression
                 Console.Write(".");
-                using Plaintext plainTest = new Plaintext();
-                decryptor.Decrypt(encryptedDataList[index], plainTest);
 
-                List<ulong> list = new List<ulong>();
-                batchEncoder.Decode(plainTest, list);
-
-                MemoryStream memStream = new MemoryStream();
+                //Create a MemoryStream
                 //Will (in order) load in the parameters, searchValue, and inputData
+                MemoryStream memStream = new MemoryStream();
+                
                 //Save parameters
                 parms.Save(memStream, ComprModeType.Deflate);
 
@@ -215,10 +234,10 @@ namespace WordCompare
                 //Seek to the start
                 memStream.Seek(0, SeekOrigin.Begin);
 
-                //Compute that memoryStream
+                //Compute on that memoryStream (This is where the DCP method will be)
                 MemoryStream resultMemStream = compute(memStream);
 
-                //Load into a Ciphertext
+                //Load results into a Ciphertext
                 using Ciphertext encryptedResults = new Ciphertext();
                 encryptedResults.Load(context, resultMemStream);
 
@@ -230,37 +249,47 @@ namespace WordCompare
                 List<ulong> resultMatrix = new List<ulong>();
                 batchEncoder.Decode(plainResults, resultMatrix);
 
-                //Process
-                //***Run example where the last list contains the matched word (Will break it)***
-                matchFound = resultMatrix.FindIndex(x => x == 0) != -1;
+                //Process reults
+                int count = resultMatrix.FindAll(x => x == 0).Count;
+                matchFound = count > 0;
 
+                //Add to counter if matchFound
+                if (matchFound) { totalWordCount += count; }
+
+                //Dispose of the memory stream
                 resultMemStream.Dispose();
+                
                 index++;
             }
             sw.Stop();
-            Console.WriteLine("Total time: " + sw.ElapsedMilliseconds);
-            return matchFound;
+            Console.WriteLine("\nTotal time (ms): " + sw.ElapsedMilliseconds);
+            Console.WriteLine("Search speed (words/s): " + ((ulong)index * parms.PolyModulusDegree) / ((ulong)sw.ElapsedMilliseconds / 1000));
+            return totalWordCount;
         }
 
         private static MemoryStream compute(MemoryStream memStream)
         {
+            //Load the variables from the memory stream
             EncryptionParameters parms = new EncryptionParameters();
             parms.Load(memStream);
 
+            //Create the context and evaluator based on the parms
             SEALContext context = new SEALContext(parms);
-
             using Evaluator evaluator = new Evaluator(context);
 
+            //Create the search Ciphertext
             using Ciphertext encryptedSearchValue = new Ciphertext();
             encryptedSearchValue.Load(context, memStream);
 
+            //Create the data Ciphertext
             using Ciphertext encryptedDataMatrix = new Ciphertext();
             encryptedDataMatrix.Load(context, memStream);
 
+            //Create the result Ciphertext and do the subtraction between the two ciphertexts
             using Ciphertext encryptedDataResult = new Ciphertext();
-
             evaluator.Sub(encryptedDataMatrix, encryptedSearchValue, encryptedDataResult);
 
+            //Create the return memory stream and save the results to it
             MemoryStream returnMemStream = new MemoryStream();
             encryptedDataResult.Save(returnMemStream, ComprModeType.Deflate);
 
@@ -268,15 +297,17 @@ namespace WordCompare
             returnMemStream.Seek(0, SeekOrigin.Begin);
 
             //Dispose everything (Unsure if necessary)
-            memStream.Dispose();
-            encryptedSearchValue.Dispose();
-            encryptedDataMatrix.Dispose();
-            encryptedDataResult.Dispose();
-            evaluator.Dispose();
+            //memStream.Dispose();
+            //encryptedSearchValue.Dispose();
+            //encryptedDataMatrix.Dispose();
+            //encryptedDataResult.Dispose();
+            //evaluator.Dispose();
             context.Dispose();
             parms.Dispose();
 
             return returnMemStream;
+            //Since Tuesday I've been working on making my demo much more efficient and the total hashing time is now about 55% of what it use to be. I've also been going through the DCP trying 
+            //to figure a way to connect C# with JavaScript and still haven't found anything that will work well
         }
         
   
